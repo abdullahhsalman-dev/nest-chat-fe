@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import axios from "axios";
+import { create } from "zustand";
 
 interface User {
   id: string;
@@ -49,6 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
       const { token, user } = response.data;
 
+      localStorage.setItem("userId", user.id);
       // Set token in localStorage and axios default headers
       localStorage.setItem("token", token);
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
@@ -121,9 +122,10 @@ export const initializeAuth = async (): Promise<void> => {
   if (token && isAuthenticated) {
     try {
       useAuthStore.setState({ loading: true });
+      const userId = localStorage.getItem("userId");
 
       axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      const response = await axios.get<User>(`${API_URL}/auth/profile`);
+      const response = await axios.get<User>(`${API_URL}/auth/user/${userId}`);
 
       useAuthStore.setState({
         user: response.data,
