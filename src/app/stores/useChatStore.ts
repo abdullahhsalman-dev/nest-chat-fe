@@ -16,6 +16,26 @@ interface ApiErrorResponse {
   statusCode?: number;
 }
 
+interface ConversationApiResponse {
+  id?: string; // Optional, as we may generate it if not provided
+  userId: string;
+  user?: {
+    id: string;
+    username: string;
+    email?: string;
+  };
+  lastMessage?: {
+    _id: string;
+    senderId: string;
+    receiverId: string;
+    content: string;
+    read: boolean;
+    timestamp: string;
+    __v?: number;
+  };
+  unreadCount?: number;
+}
+
 interface SocketError {
   message: string;
   type?: string;
@@ -57,18 +77,25 @@ interface UserStatusEvent {
   status: "online" | "offline";
 }
 
+interface TypingEvent {
+  userId: string;
+  isTyping: boolean;
+}
+
 interface ChatState {
   socket: Socket | null;
   conversations: Conversation[];
   currentConversation: Conversation | null;
   messages: Message[];
   onlineUsers: string[];
+  typingUsers: string[];
   loading: boolean;
   error: ChatError | null;
 
   // Socket actions
   connectSocket: () => void;
   disconnectSocket: () => void;
+  emitTyping: (receiverId: string) => void;
 
   // Fetch data
   fetchConversations: () => Promise<void>;
@@ -100,20 +127,17 @@ const handleAxiosError = (error: unknown): ChatError => {
     const axiosError = error as AxiosError<ApiErrorResponse>;
 
     if (axiosError.response) {
-      // Server responded with error status
       return createChatError(
         axiosError.response.data?.message || axiosError.message,
         axiosError.response.status === 401 ? "auth" : "server",
         axiosError.response.status
       );
     } else if (axiosError.request) {
-      // Request was made but no response received
       return createChatError(
         "Network error - no response from server",
         "network"
       );
     } else {
-      // Something else happened
       return createChatError(axiosError.message, "network");
     }
   } else if (error instanceof Error) {
@@ -144,6 +168,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   currentConversation: null,
   messages: [],
   onlineUsers: [],
+  typingUsers: [],
   loading: false,
   error: null,
 
@@ -154,13 +179,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const socket = io(API_URL, {
         withCredentials: true,
-        transports: ["websocket", "polling"], // Fallback options
+        transports: ["websocket", "polling"],
       });
 
-      // Socket event listeners
       socket.on("connect", () => {
         console.log("Socket connected");
-        // Clear any previous connection errors
         set({ error: null });
       });
 
@@ -168,9 +191,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const { conversations, currentConversation } = get();
         console.log("conversation is ", conversations);
 
-        console.log("New message received:", message);
-
-        // Update messages if in current conversation
         if (
           currentConversation &&
           (message.senderId === currentConversation.user.id ||
@@ -180,7 +200,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             messages: [...state.messages, message],
           }));
 
-          // Mark message as read if from current conversation partner
           if (message.senderId === currentConversation.user.id) {
             get()
               .markMessageAsRead(message.id)
@@ -190,7 +209,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         }
 
-        // Update conversations list with latest message
         const { user } = useAuthStore.getState();
         if (!user) return;
 
@@ -226,6 +244,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       });
 
+      socket.on("typing", (data: TypingEvent) => {
+        const { userId, isTyping } = data;
+        set((state) => ({
+          typingUsers: isTyping
+            ? [...state.typingUsers.filter((id) => id !== userId), userId]
+            : state.typingUsers.filter((id) => id !== userId),
+        }));
+      });
+
       socket.on("onlineUsers", (users: string[]) => {
         console.log("Online users:", users);
         set({ onlineUsers: users });
@@ -240,7 +267,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       socket.on("disconnect", (reason: string) => {
         console.log("Socket disconnected:", reason);
         if (reason === "io server disconnect") {
-          // Server forced disconnect - try to reconnect
           socket.connect();
         }
       });
@@ -269,7 +295,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { socket } = get();
     if (socket) {
       socket.disconnect();
-      set({ socket: null, onlineUsers: [] });
+      set({ socket: null, onlineUsers: [], typingUsers: [] });
+    }
+  },
+
+  emitTyping: (receiverId: string) => {
+    const { socket } = get();
+    if (socket) {
+      socket.emit("typing", { receiverId, isTyping: true });
+      setTimeout(() => {
+        socket.emit("typing", { receiverId, isTyping: false });
+      }, 3000); // Stop typing after 3 seconds of inactivity
     }
   },
 
@@ -280,15 +316,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       set({ loading: true, error: null });
 
-      const response = await axios.get<Conversation[]>(
-        `${API_URL}/chat/conversations`,
-        {
-          withCredentials: true,
-        }
+      const response = await axios.get<{
+        success: boolean;
+        conversations: ConversationApiResponse[];
+      }>(`${API_URL}/chat/conversations`, {
+        withCredentials: true,
+      });
+
+      // Map API response to Conversation interface
+      const conversations: Conversation[] = response.data.conversations.map(
+        (conv: ConversationApiResponse) => ({
+          id: conv.id || `conv_${conv.userId}`,
+          user: {
+            id: conv.userId,
+            username: conv.user?.username || "Unknown",
+            email: conv.user?.email || "",
+          },
+          lastMessage: conv.lastMessage
+            ? {
+                id: conv.lastMessage._id,
+                senderId: conv.lastMessage.senderId,
+                receiverId: conv.lastMessage.receiverId,
+                content: conv.lastMessage.content,
+                read: conv.lastMessage.read,
+                createdAt: conv.lastMessage.timestamp,
+              }
+            : undefined,
+          unreadCount: conv.unreadCount || 0,
+        })
       );
 
       set({
-        conversations: response.data,
+        conversations,
         loading: false,
       });
     } catch (error) {
@@ -300,7 +359,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         loading: false,
       });
 
-      // If unauthorized, user might need to re-authenticate
       if (chatError.code === 401) {
         useAuthStore.getState().logout();
       }
@@ -321,7 +379,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       );
 
-      // Find existing conversation or create a new one
       const existingConv = get().conversations.find(
         (c) => c.user.id === userId
       );
@@ -337,7 +394,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         loading: false,
       });
 
-      // Mark unread messages as read
       if (existingConv?.unreadCount) {
         set((state) => ({
           conversations: state.conversations.map((c) =>
@@ -345,7 +401,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         }));
 
-        // Mark messages as read on the server
         const unreadMessages = response.data.messages.filter(
           (m) => !m.read && m.senderId === userId
         );
@@ -394,7 +449,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       );
 
-      // Optimistically add message to current conversation
       const message = response.data;
       const { currentConversation } = get();
 
@@ -404,7 +458,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       }
 
-      // Update conversations list
       set((state) => ({
         conversations: state.conversations.map((conv) => {
           if (conv.user.id === receiverId) {
@@ -445,7 +498,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       );
 
-      // Update the local message status
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === messageId ? { ...m, read: true } : m
@@ -453,14 +505,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
     } catch (error) {
       console.error("Failed to mark message as read:", error);
-
       const chatError = handleAxiosError(error);
 
       if (chatError.code === 401) {
         useAuthStore.getState().logout();
       }
-
-      // Don't set error state for read status failures - they're not critical
     }
   },
 
@@ -473,7 +522,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 }));
 
-// Helper function to initialize chat (call this when user logs in)
 export const initializeChat = () => {
   const { isAuthenticated } = useAuthStore.getState();
   const { connectSocket, fetchConversations } = useChatStore.getState();
@@ -484,22 +532,20 @@ export const initializeChat = () => {
   }
 };
 
-// Helper function to cleanup chat (call this when user logs out)
 export const cleanupChat = () => {
   const { disconnectSocket } = useChatStore.getState();
 
   disconnectSocket();
 
-  // Reset chat state
   useChatStore.setState({
     conversations: [],
     currentConversation: null,
     messages: [],
     onlineUsers: [],
+    typingUsers: [],
     loading: false,
     error: null,
   });
 };
 
-// Export error types for use in components
 export type { ChatError, ApiErrorResponse, SocketError };

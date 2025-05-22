@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, KeyboardEvent, FormEvent } from "react";
-import { format } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useChatStore, Message } from "../stores/useChatStore";
+import { motion, AnimatePresence } from "framer-motion"; // For animations
+import { FiSend, FiLogOut, FiUser } from "react-icons/fi"; // Icons for better UX
 
 export default function ChatComponent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -13,31 +15,35 @@ export default function ChatComponent() {
     currentConversation,
     messages,
     loading,
-
     fetchConversations,
     fetchMessages,
     sendMessage,
     isUserOnline,
     connectSocket,
+    typingUsers,
   } = useChatStore();
 
   const [messageInput, setMessageInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
 
-  // Connect to socket and fetch conversations when component mounts
   useEffect(() => {
     connectSocket();
     fetchConversations();
-
-    // Clean up on unmount
     return () => {
       useChatStore.getState().disconnectSocket();
     };
   }, [connectSocket, fetchConversations]);
 
-  // Auto-scroll to bottom of messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    // Emit typing status
+    if (isTyping && currentConversation) {
+      useChatStore.getState().emitTyping(currentConversation.user.id);
+    }
+  }, [isTyping, currentConversation]);
 
   const handleSelectConversation = (userId: string) => {
     fetchMessages(userId);
@@ -45,12 +51,11 @@ export default function ChatComponent() {
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
-
     if (!messageInput.trim() || !currentConversation) return;
-
     try {
       await sendMessage(currentConversation.user.id, messageInput);
       setMessageInput("");
+      setIsTyping(false);
     } catch (error) {
       console.error("Failed to send message", error);
     }
@@ -61,129 +66,124 @@ export default function ChatComponent() {
       e.preventDefault();
       handleSendMessage(e);
     }
+    setIsTyping(true);
   };
 
-  // Format date for messages
   const formatMessageDate = (dateString: string) => {
-    return format(new Date(dateString), "h:mm a");
+    const date = new Date(dateString);
+    if (isToday(date)) return format(date, "h:mm a");
+    if (isYesterday(date)) return `Yesterday ${format(date, "h:mm a")}`;
+    return format(date, "MMM d, yyyy h:mm a");
   };
 
-  // Group messages by date for better UI organization
   const groupMessagesByDate = (messages: Message[]) => {
     return messages.reduce((groups: Record<string, Message[]>, message) => {
       const date = format(new Date(message.createdAt), "yyyy-MM-dd");
-      if (!groups[date]) {
-        groups[date] = [];
-      }
+      if (!groups[date]) groups[date] = [];
       groups[date].push(message);
       return groups;
     }, {});
   };
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar - Conversations */}
-      <div className="w-1/4 bg-white border-r border-gray-200 flex flex-col">
-        <div className="border-b border-gray-200 p-4 flex justify-between items-center">
-          <h2 className="text-xl font-semibold">{user?.username || "Chat"}</h2>
+    <div className="flex h-screen bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900 font-sans">
+      {/* Sidebar */}
+      <aside className="w-80 bg-white shadow-lg flex flex-col transition-all duration-300 md:w-64 sm:w-full sm:max-w-[80%] sm:absolute sm:z-10">
+        <div className="p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+          <h2 className="text-lg font-bold">{user?.username || "Chat"}</h2>
           <button
             onClick={logout}
-            className="px-3 py-1 bg-gray-200 rounded-md text-gray-700 text-sm hover:bg-gray-300"
+            className="text-sm px-3 py-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors flex items-center gap-2"
+            aria-label="Logout"
           >
+            <FiLogOut />
             Logout
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {loading && conversations.length === 0 ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="text-gray-500">Loading conversations...</div>
+        <div className="overflow-y-auto flex-1">
+          {loading && (
+            <div className="flex justify-center items-center mt-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
             </div>
-          ) : conversations.length === 0 ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="text-gray-500">No conversations yet</div>
-            </div>
-          ) : (
-            conversations.map((conversation) => (
-              <div
-                key={conversation.user.id}
-                onClick={() => handleSelectConversation(conversation.user.id)}
-                className={`p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 flex items-center ${
-                  currentConversation?.user.id === conversation.user.id
-                    ? "bg-blue-50"
-                    : ""
-                }`}
-              >
-                <div className="relative">
-                  <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center">
-                    <span className="text-lg font-semibold text-gray-700">
-                      {conversation.user.username.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-
-                  {/* Online indicator */}
-                  {isUserOnline(conversation.user.id) && (
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                  )}
-                </div>
-
-                <div className="ml-3 flex-1 overflow-hidden">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-medium text-gray-900 truncate">
-                      {conversation.user.username}
-                    </h3>
-                    {conversation.lastMessage && (
-                      <span className="text-xs text-gray-500">
-                        {format(
-                          new Date(conversation.lastMessage.createdAt),
-                          "h:mm a"
-                        )}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center">
-                    <p className="text-sm text-gray-500 truncate">
-                      {conversation.lastMessage?.content || "No messages yet"}
-                    </p>
-
-                    {conversation.unreadCount > 0 && (
-                      <span className="ml-2 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {conversation.unreadCount}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
           )}
+          {!loading && conversations.length === 0 && (
+            <p className="text-center text-gray-500 mt-4">No conversations</p>
+          )}
+          <AnimatePresence>
+            {!loading &&
+              conversations.map((convo) => (
+                <motion.div
+                  key={convo.user.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={() => handleSelectConversation(convo.user.id)}
+                  className={`cursor-pointer p-4 hover:bg-gray-100 flex items-center gap-3 transition-colors ${
+                    currentConversation?.user.id === convo.user.id
+                      ? "bg-blue-50"
+                      : ""
+                  }`}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter")
+                      handleSelectConversation(convo.user.id);
+                  }}
+                >
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                      {convo.user.username.charAt(0).toUpperCase()}
+                    </div>
+                    {isUserOnline(convo.user.id) && (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-semibold truncate">
+                        {convo.user.username}
+                      </h4>
+                      {convo.lastMessage && (
+                        <span className="text-xs text-gray-500">
+                          {format(new Date(convo.lastMessage.createdAt), "p")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600 truncate">
+                      {convo.lastMessage?.content || "No messages yet"}
+                    </div>
+                  </div>
+                  {convo.unreadCount > 0 && (
+                    <div className="bg-blue-500 text-white text-xs rounded-full px-2 py-1">
+                      {convo.unreadCount}
+                    </div>
+                  )}
+                </motion.div>
+              ))}
+          </AnimatePresence>
         </div>
-      </div>
+      </aside>
 
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Chat Header */}
+      {/* Main Chat Area */}
+      <main className="flex-1 flex flex-col">
         {currentConversation ? (
           <>
-            <div className="bg-white border-b border-gray-200 p-4 flex items-center">
+            <div className="p-4 border-b bg-white shadow-sm flex items-center gap-3">
               <div className="relative">
-                <div className="w-10 h-10 bg-gray-300 rounded-full flex items-center justify-center">
-                  <span className="text-md font-semibold text-gray-700">
-                    {currentConversation.user.username.charAt(0).toUpperCase()}
-                  </span>
+                <div className="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold">
+                  {currentConversation.user.username.charAt(0).toUpperCase()}
                 </div>
-
-                {/* Online indicator */}
                 {isUserOnline(currentConversation.user.id) && (
-                  <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-white"></div>
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></span>
                 )}
               </div>
-
-              <div className="ml-3">
-                <h3 className="text-lg font-medium text-gray-900">
+              <div>
+                <h3 className="text-lg font-semibold">
                   {currentConversation.user.username}
                 </h3>
-                <p className="text-sm text-gray-500">
+                <p className="text-xs text-gray-500">
                   {isUserOnline(currentConversation.user.id)
                     ? "Online"
                     : "Offline"}
@@ -191,154 +191,101 @@ export default function ChatComponent() {
               </div>
             </div>
 
-            {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-              {loading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-gray-500">Loading messages...</div>
-                </div>
-              ) : messages.length === 0 ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-gray-500">
-                    No messages yet. Start a conversation!
-                  </div>
+              {messages.length === 0 ? (
+                <div className="text-center text-gray-500">
+                  No messages. Start chatting!
                 </div>
               ) : (
-                Object.entries(groupMessagesByDate(messages)).map(
-                  ([date, dateMessages]) => (
-                    <div key={date} className="mb-6">
-                      <div className="flex justify-center mb-4">
-                        <div className="bg-gray-200 rounded-full px-3 py-1 text-xs text-gray-700">
+                <AnimatePresence>
+                  {Object.entries(groupMessagesByDate(messages)).map(
+                    ([date, grouped]) => (
+                      <div key={date} className="mb-4">
+                        <div className="text-center text-xs text-gray-500 bg-gray-200 rounded-full px-3 py-1 mx-auto w-fit">
                           {format(new Date(date), "MMMM d, yyyy")}
                         </div>
-                      </div>
-
-                      {dateMessages.map((message) => {
-                        const isOwn = message.senderId === user?.id;
-
-                        return (
-                          <div
-                            key={message.id}
-                            className={`mb-4 flex ${
-                              isOwn ? "justify-end" : "justify-start"
-                            }`}
-                          >
-                            <div
-                              className={`max-w-xs lg:max-w-md rounded-lg px-4 py-2 ${
-                                isOwn
-                                  ? "bg-blue-600 text-white rounded-br-none"
-                                  : "bg-white text-gray-800 rounded-bl-none"
+                        {grouped.map((msg) => {
+                          const isOwn = msg.senderId === user?.id;
+                          return (
+                            <motion.div
+                              key={msg.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.2 }}
+                              className={`mb-3 flex ${
+                                isOwn ? "justify-end" : "justify-start"
                               }`}
                             >
-                              <div className="text-sm">{message.content}</div>
                               <div
-                                className={`text-xs mt-1 flex items-center ${
+                                className={`max-w-xs sm:max-w-md px-4 py-2 rounded-2xl shadow-sm ${
                                   isOwn
-                                    ? "text-blue-200 justify-end"
-                                    : "text-gray-500"
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-white border text-gray-900"
                                 }`}
                               >
-                                {formatMessageDate(message.createdAt)}
-                                {isOwn && (
-                                  <span className="ml-1">
-                                    {message.read ? (
-                                      <svg
-                                        className="w-3 h-3"
-                                        fill="currentColor"
-                                        viewBox="0 0 20 20"
-                                      >
-                                        <path d="M9 5.173l1.414-1.414 6.364 6.364-1.414 1.414L9 5.173zM7.5 9.914L3.914 6.328l-1.414 1.414 3.586 3.586 1.414-1.414z" />
-                                      </svg>
-                                    ) : (
-                                      <svg
-                                        className="w-3 h-3"
-                                        fill="currentColor"
-                                        viewBox="0 0 20 20"
-                                      >
-                                        <path d="M10 2a8 8 0 100 16 8 8 0 000-16zm0 14a6 6 0 110-12 6 6 0 010 12z" />
-                                      </svg>
-                                    )}
-                                  </span>
-                                )}
+                                <div className="text-sm">{msg.content}</div>
+                                <div className="text-xs mt-1 text-right opacity-75">
+                                  {formatMessageDate(msg.createdAt)}
+                                </div>
                               </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )
-                )
+                            </motion.div>
+                          );
+                        })}
+                      </div>
+                    )
+                  )}
+                </AnimatePresence>
               )}
-
-              {/* Auto-scroll reference element */}
+              {typingUsers.includes(currentConversation.user.id) && (
+                <div className="flex justify-start mb-3">
+                  <div className="bg-gray-200 rounded-2xl px-4 py-2 text-sm text-gray-600">
+                    <span className="animate-pulse">Typing...</span>
+                  </div>
+                </div>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Message Input */}
-            <div className="bg-white border-t border-gray-200 p-4">
-              <form onSubmit={handleSendMessage} className="flex items-center">
-                <textarea
-                  className="flex-1 border border-gray-300 rounded-lg resize-none px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Type a message..."
-                  rows={1}
-                  value={messageInput}
-                  onChange={(e) => setMessageInput(e.target.value)}
-                  onKeyDown={handleKeyPress}
-                />
-                <button
-                  type="submit"
-                  disabled={!messageInput.trim()}
-                  className={`ml-2 rounded-full p-2 ${
-                    messageInput.trim()
-                      ? "bg-blue-600 text-white hover:bg-blue-700"
-                      : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                  }`}
-                >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
-                    ></path>
-                  </svg>
-                </button>
-              </form>
-            </div>
+            <form
+              onSubmit={handleSendMessage}
+              className="p-4 bg-white border-t flex gap-2 items-center"
+            >
+              <textarea
+                rows={1}
+                className="flex-1 border rounded-lg px-3 py-2 resize-none focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                placeholder="Type a message..."
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                aria-label="Message input"
+              />
+              <button
+                type="submit"
+                disabled={!messageInput.trim()}
+                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
+                  messageInput.trim()
+                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    : "bg-gray-200 text-gray-500 cursor-not-allowed"
+                }`}
+                aria-label="Send message"
+              >
+                <FiSend />
+                Send
+              </button>
+            </form>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center bg-gray-50">
-            <div className="text-center">
-              <svg
-                className="w-16 h-16 mx-auto text-gray-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                ></path>
-              </svg>
-              <h3 className="mt-2 text-xl font-medium text-gray-900">
-                No conversation selected
-              </h3>
-              <p className="mt-1 text-gray-500">
-                Choose a conversation from the sidebar to start chatting
+          <div className="flex-1 flex items-center justify-center text-gray-500 text-center">
+            <div>
+              <FiUser className="mx-auto text-4xl mb-2" />
+              <p className="text-lg font-medium">No conversation selected</p>
+              <p className="text-sm">
+                Choose a user from the sidebar to begin chatting.
               </p>
             </div>
           </div>
         )}
-      </div>
+      </main>
     </div>
   );
 }
