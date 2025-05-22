@@ -1,22 +1,28 @@
 "use client";
 
 import { useEffect } from "react";
-import { redirect } from "next/navigation";
-import { useAuthStore, initializeAuth } from "./stores/useAuthStore";
+import {
+  useAuthStore,
+  initializeAuth,
+  setupAxiosInterceptors,
+} from "./stores/useAuthStore";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
   const { isAuthenticated, loading } = useAuthStore();
+  const router = useRouter();
 
   useEffect(() => {
     initializeAuth().catch(console.error);
+    setupAxiosInterceptors();
   }, []);
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      redirect("/chat");
+      router.push("/chat");
     }
-  }, [isAuthenticated, loading]);
+  }, [isAuthenticated, loading, router]);
 
   if (loading) {
     return (

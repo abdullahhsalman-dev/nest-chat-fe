@@ -91,3 +91,5 @@ State Management with Zustand
 
 src/lib/stores/useAuthStore.ts - Authentication state and API calls
 src/lib/stores/useChatStore.ts - Chat functionality, WebSocket connections, and message handling
+
+npx next dev -p 4000
