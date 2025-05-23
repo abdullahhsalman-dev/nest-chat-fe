@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useAuthStore,
@@ -12,6 +12,7 @@ import ChatComponent from "../components/ChatComponent";
 export default function ChatPage() {
   const { isAuthenticated, loading } = useAuthStore();
   const router = useRouter();
+  const [initialCheckComplete, setInitialCheckComplete] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -24,26 +25,24 @@ export default function ChatPage() {
         );
       } catch (error) {
         console.error("Failed to initialize auth:", error);
+      } finally {
+        setInitialCheckComplete(true); // Mark initial check as complete
       }
     };
     init();
   }, []);
 
   useEffect(() => {
-    console.log("Not authenticated, navigating to /login", {
-      isAuthenticated,
-      loading,
-    });
-    if (!loading && !isAuthenticated) {
+    if (initialCheckComplete && !loading && !isAuthenticated) {
       console.log("Not authenticated, navigating to /login", {
         isAuthenticated,
         loading,
       });
-      router.push("/login"); // Use router.push for client-side navigation
+      router.push("/login"); // Redirect only once after initial check
     }
-  }, [isAuthenticated, loading, router]);
+  }, [initialCheckComplete, isAuthenticated, loading, router]);
 
-  if (loading) {
+  if (loading && !initialCheckComplete) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>

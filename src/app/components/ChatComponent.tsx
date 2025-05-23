@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, KeyboardEvent, FormEvent } from "react";
-import { format, isToday, isYesterday } from "date-fns";
+import { format, isToday, isYesterday, parseISO } from "date-fns";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useChatStore, Message } from "../stores/useChatStore";
 import { motion, AnimatePresence } from "framer-motion"; // For animations
@@ -78,7 +78,14 @@ export default function ChatComponent() {
 
   const groupMessagesByDate = (messages: Message[]) => {
     return messages.reduce((groups: Record<string, Message[]>, message) => {
-      const date = format(new Date(message.createdAt), "yyyy-MM-dd");
+      const date = message.createdAt
+        ? format(
+            typeof message.createdAt === "string"
+              ? parseISO(message.createdAt) // Parse ISO string if it's a string
+              : new Date(message.createdAt), // Use directly if it's a Date object
+            "yyyy-MM-dd"
+          )
+        : "N/A";
       if (!groups[date]) groups[date] = [];
       groups[date].push(message);
       return groups;
@@ -202,7 +209,14 @@ export default function ChatComponent() {
                     ([date, grouped]) => (
                       <div key={date} className="mb-4">
                         <div className="text-center text-xs text-gray-500 bg-gray-200 rounded-full px-3 py-1 mx-auto w-fit">
-                          {format(new Date(date), "MMMM d, yyyy")}
+                          {date
+                            ? format(
+                                typeof date === "string"
+                                  ? parseISO(date)
+                                  : new Date(date),
+                                "MMMM d, yyyy"
+                              )
+                            : "N/A"}
                         </div>
                         {grouped.map((msg) => {
                           const isOwn = msg.senderId === user?.id;
