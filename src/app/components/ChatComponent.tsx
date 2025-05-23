@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, KeyboardEvent, FormEvent } from "react";
-import { format, isToday, isYesterday, parseISO } from "date-fns";
+import { format, isToday, isYesterday, parseISO, isValid } from "date-fns";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useChatStore, Message } from "../stores/useChatStore";
-import { motion, AnimatePresence } from "framer-motion"; // For animations
-import { FiSend, FiLogOut, FiUser } from "react-icons/fi"; // Icons for better UX
+import { motion, AnimatePresence } from "framer-motion";
+import { FiSend, FiLogOut, FiUser } from "react-icons/fi";
 
 export default function ChatComponent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -39,7 +39,6 @@ export default function ChatComponent() {
   }, [messages]);
 
   useEffect(() => {
-    // Emit typing status
     if (isTyping && currentConversation) {
       useChatStore.getState().emitTyping(currentConversation.user.id);
     }
@@ -69,8 +68,11 @@ export default function ChatComponent() {
     setIsTyping(true);
   };
 
-  const formatMessageDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatMessageDate = (dateInput: string | Date | null | undefined) => {
+    if (!dateInput) return "N/A";
+    const date =
+      typeof dateInput === "string" ? parseISO(dateInput) : new Date(dateInput);
+    if (!isValid(date)) return "N/A";
     if (isToday(date)) return format(date, "h:mm a");
     if (isYesterday(date)) return `Yesterday ${format(date, "h:mm a")}`;
     return format(date, "MMM d, yyyy h:mm a");
@@ -78,24 +80,32 @@ export default function ChatComponent() {
 
   const groupMessagesByDate = (messages: Message[]) => {
     return messages.reduce((groups: Record<string, Message[]>, message) => {
-      const date = message.createdAt
-        ? format(
-            typeof message.createdAt === "string"
-              ? parseISO(message.createdAt) // Parse ISO string if it's a string
-              : new Date(message.createdAt), // Use directly if it's a Date object
-            "yyyy-MM-dd"
-          )
-        : "N/A";
-      if (!groups[date]) groups[date] = [];
-      groups[date].push(message);
+      const dateInput = message.createdAt;
+      if (!dateInput) {
+        groups["N/A"] = groups["N/A"] || [];
+        groups["N/A"].push(message);
+        return groups;
+      }
+      const date =
+        typeof dateInput === "string"
+          ? parseISO(dateInput)
+          : new Date(dateInput);
+      if (!isValid(date)) {
+        groups["N/A"] = groups["N/A"] || [];
+        groups["N/A"].push(message);
+        return groups;
+      }
+      const dateKey = format(date, "yyyy-MM-dd");
+      groups[dateKey] = groups[dateKey] || [];
+      groups[dateKey].push(message);
       return groups;
     }, {});
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900 font-sans">
+    <div className="flex h-screen bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900 font-sans w-3/5">
       {/* Sidebar */}
-      <aside className="w-80 bg-white shadow-lg flex flex-col transition-all duration-300 md:w-64 sm:w-full sm:max-w-[80%] sm:absolute sm:z-10">
+      <aside className="w-1/5 bg-white shadow-lg flex flex-col transition-all duration-300 md:w-64 sm:w-full sm:max-w-[80%] sm:absolute sm:z-10">
         <div className="p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-500 to-blue-600 text-white">
           <h2 className="text-lg font-bold">{user?.username || "Chat"}</h2>
           <button
@@ -154,7 +164,7 @@ export default function ChatComponent() {
                       </h4>
                       {convo.lastMessage && (
                         <span className="text-xs text-gray-500">
-                          {format(new Date(convo.lastMessage.createdAt), "p")}
+                          {formatMessageDate(convo.lastMessage.createdAt)}
                         </span>
                       )}
                     </div>
@@ -209,14 +219,9 @@ export default function ChatComponent() {
                     ([date, grouped]) => (
                       <div key={date} className="mb-4">
                         <div className="text-center text-xs text-gray-500 bg-gray-200 rounded-full px-3 py-1 mx-auto w-fit">
-                          {date
-                            ? format(
-                                typeof date === "string"
-                                  ? parseISO(date)
-                                  : new Date(date),
-                                "MMMM d, yyyy"
-                              )
-                            : "N/A"}
+                          {date === "N/A"
+                            ? "Unknown Date"
+                            : format(parseISO(date), "MMMM d, yyyy")}
                         </div>
                         {grouped.map((msg) => {
                           const isOwn = msg.senderId === user?.id;
