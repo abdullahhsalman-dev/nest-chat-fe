@@ -5,7 +5,7 @@ import { format, isToday, isYesterday, parseISO, isValid } from "date-fns";
 import { useAuthStore } from "../stores/useAuthStore";
 import { useChatStore, Message } from "../stores/useChatStore";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiSend, FiLogOut, FiUser } from "react-icons/fi";
+import { FiSend, FiLogOut, FiUser, FiMenu, FiX } from "react-icons/fi";
 
 export default function ChatComponent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -25,6 +25,7 @@ export default function ChatComponent() {
 
   const [messageInput, setMessageInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     connectSocket();
@@ -46,6 +47,7 @@ export default function ChatComponent() {
 
   const handleSelectConversation = (userId: string) => {
     fetchMessages(userId);
+    setIsSidebarOpen(false); // Close sidebar on mobile after selection
   };
 
   const handleSendMessage = async (e: FormEvent) => {
@@ -103,11 +105,24 @@ export default function ChatComponent() {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900 font-sans w-3/5">
+    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100 text-gray-900 font-sans max-w-7xl mx-auto">
+      {/* Sidebar Toggle Button for Mobile */}
+      <button
+        className="md:hidden fixed top-4 left-4 z-20 p-2 bg-blue-600 text-white rounded-full shadow-lg"
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        aria-label="Toggle sidebar"
+      >
+        {isSidebarOpen ? <FiX size={20} /> : <FiMenu size={20} />}
+      </button>
+
       {/* Sidebar */}
-      <aside className="w-1/5 bg-white shadow-lg flex flex-col transition-all duration-300 md:w-64 sm:w-full sm:max-w-[80%] sm:absolute sm:z-10">
-        <div className="p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-          <h2 className="text-lg font-bold">{user?.username || "Chat"}</h2>
+      <aside
+        className={`bg-white shadow-xl flex flex-col transition-all duration-300 w-80 md:w-80 fixed md:static h-full z-10 ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        } md:translate-x-0`}
+      >
+        <div className="p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+          <h2 className="text-xl font-bold">{user?.username || "Chat"}</h2>
           <button
             onClick={logout}
             className="text-sm px-3 py-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors flex items-center gap-2"
@@ -137,7 +152,7 @@ export default function ChatComponent() {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
                   onClick={() => handleSelectConversation(convo.user.id)}
-                  className={`cursor-pointer p-4 hover:bg-gray-100 flex items-center gap-3 transition-colors ${
+                  className={`cursor-pointer p-4 hover:bg-gray-100 flex items-center gap-3 transition-colors border-b border-gray-100 ${
                     currentConversation?.user.id === convo.user.id
                       ? "bg-blue-50"
                       : ""
@@ -150,7 +165,7 @@ export default function ChatComponent() {
                   }}
                 >
                   <div className="relative">
-                    <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center font-bold shadow-md">
                       {convo.user.username.charAt(0).toUpperCase()}
                     </div>
                     {isUserOnline(convo.user.id) && (
@@ -159,7 +174,7 @@ export default function ChatComponent() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-center">
-                      <h4 className="font-semibold truncate">
+                      <h4 className="font-semibold truncate text-gray-800">
                         {convo.user.username}
                       </h4>
                       {convo.lastMessage && (
@@ -184,12 +199,12 @@ export default function ChatComponent() {
       </aside>
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col">
+      <main className="flex-1 flex flex-col md:ml-80">
         {currentConversation ? (
           <>
             <div className="p-4 border-b bg-white shadow-sm flex items-center gap-3">
               <div className="relative">
-                <div className="w-10 h-10 bg-blue-500 text-white rounded-full flex items-center justify-center font-bold">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-full flex items-center justify-center font-bold shadow-md">
                   {currentConversation.user.username.charAt(0).toUpperCase()}
                 </div>
                 {isUserOnline(currentConversation.user.id) && (
@@ -197,7 +212,7 @@ export default function ChatComponent() {
                 )}
               </div>
               <div>
-                <h3 className="text-lg font-semibold">
+                <h3 className="text-lg font-semibold text-gray-800">
                   {currentConversation.user.username}
                 </h3>
                 <p className="text-xs text-gray-500">
@@ -208,7 +223,7 @@ export default function ChatComponent() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+            <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
               {messages.length === 0 ? (
                 <div className="text-center text-gray-500">
                   No messages. Start chatting!
@@ -217,8 +232,8 @@ export default function ChatComponent() {
                 <AnimatePresence>
                   {Object.entries(groupMessagesByDate(messages)).map(
                     ([date, grouped]) => (
-                      <div key={date} className="mb-4">
-                        <div className="text-center text-xs text-gray-500 bg-gray-200 rounded-full px-3 py-1 mx-auto w-fit">
+                      <div key={date} className="mb-6">
+                        <div className="text-center text-xs text-gray-500 bg-gray-200 rounded-full px-3 py-1 mx-auto w-fit shadow-sm">
                           {date === "N/A"
                             ? "Unknown Date"
                             : format(parseISO(date), "MMMM d, yyyy")}
@@ -231,15 +246,15 @@ export default function ChatComponent() {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ duration: 0.2 }}
-                              className={`mb-3 flex ${
+                              className={`mb-4 flex ${
                                 isOwn ? "justify-end" : "justify-start"
                               }`}
                             >
                               <div
-                                className={`max-w-xs sm:max-w-md px-4 py-2 rounded-2xl shadow-sm ${
+                                className={`max-w-xs sm:max-w-md px-4 py-2 rounded-2xl shadow-md ${
                                   isOwn
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-white border text-gray-900"
+                                    ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white"
+                                    : "bg-white border border-gray-200 text-gray-900"
                                 }`}
                               >
                                 <div className="text-sm">{msg.content}</div>
@@ -256,8 +271,8 @@ export default function ChatComponent() {
                 </AnimatePresence>
               )}
               {typingUsers.includes(currentConversation.user.id) && (
-                <div className="flex justify-start mb-3">
-                  <div className="bg-gray-200 rounded-2xl px-4 py-2 text-sm text-gray-600">
+                <div className="flex justify-start mb-4">
+                  <div className="bg-gray-200 rounded-2xl px-4 py-2 text-sm text-gray-600 shadow-sm">
                     <span className="animate-pulse">Typing...</span>
                   </div>
                 </div>
@@ -267,11 +282,11 @@ export default function ChatComponent() {
 
             <form
               onSubmit={handleSendMessage}
-              className="p-4 bg-white border-t flex gap-2 items-center"
+              className="p-4 bg-white border-t flex gap-3 items-center shadow-sm"
             >
               <textarea
                 rows={1}
-                className="flex-1 border rounded-lg px-3 py-2 resize-none focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                className="flex-1 border border-gray-200 rounded-lg px-4 py-2 resize-none focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-gray-50 text-gray-900"
                 placeholder="Type a message..."
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
@@ -283,7 +298,7 @@ export default function ChatComponent() {
                 disabled={!messageInput.trim()}
                 className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
                   messageInput.trim()
-                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"
                     : "bg-gray-200 text-gray-500 cursor-not-allowed"
                 }`}
                 aria-label="Send message"
