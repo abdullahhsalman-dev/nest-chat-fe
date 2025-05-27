@@ -199,7 +199,7 @@ export default function ChatComponent() {
       </aside>
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col md:ml-80">
+      <main className="flex-1 flex flex-col">
         {currentConversation ? (
           <>
             <div className="p-4 border-b bg-white shadow-sm flex items-center gap-3">
