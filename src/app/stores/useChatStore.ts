@@ -1,3 +1,5 @@
+"use client";
+
 import { create } from "zustand";
 import axios, { type AxiosError } from "axios";
 import { io, type Socket } from "socket.io-client";
@@ -17,12 +19,14 @@ export interface ApiErrorResponse {
 }
 
 interface ConversationApiResponse {
-  id?: string; // Optional, as we may generate it if not provided
-  userId: string;
-  user?: {
+  id?: string;
+  user: {
     id: string;
     username: string;
     email?: string;
+    password?: string;
+    isOnline?: boolean;
+    lastSeen?: string;
   };
   lastMessage?: {
     _id: string;
@@ -305,7 +309,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       socket.emit("typing", { receiverId, isTyping: true });
       setTimeout(() => {
         socket.emit("typing", { receiverId, isTyping: false });
-      }, 3000); // Stop typing after 3 seconds of inactivity
+      }, 3000);
     }
   },
 
@@ -319,18 +323,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const response = await axios.get<{
         success: boolean;
         conversations: ConversationApiResponse[];
+        users: Record<string, User>;
       }>(`${API_URL}/chat/conversations`, {
         withCredentials: true,
       });
 
-      // Map API response to Conversation interface
       const conversations: Conversation[] = response.data.conversations.map(
         (conv: ConversationApiResponse) => ({
-          id: conv.id || `conv_${conv.userId}`,
+          id: conv.id || `conv_${conv.user.id}`,
           user: {
-            id: conv.userId,
-            username: conv.user?.username || "Unknown",
-            email: conv.user?.email || "",
+            id: conv.user.id,
+            username: conv.user.username,
+            email: conv.user.email || "",
           },
           lastMessage: conv.lastMessage
             ? {
@@ -367,15 +371,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchMessages: async (userId: string) => {
     const { isAuthenticated, user } = useAuthStore.getState();
-    if (!isAuthenticated) return;
-
-    const loggedUserId = user?.id || null;
+    if (!isAuthenticated || !user) return;
+    // const loggedUserId = user?.id || null;
 
     try {
       set({ loading: true, error: null });
 
-      const response = await axios.get<{ messages: Message[]; user: User }>(
-        `${API_URL}/chat/conversations/${loggedUserId}`,
+      // Fetch messages for the specific user conversation
+      const response = await axios.get<{ messages: Message[] }>(
+        `${API_URL}/chat/conversations/${user.id}`,
         {
           withCredentials: true,
         }
@@ -386,7 +390,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
       const conversation: Conversation = existingConv || {
         id: `conv_${userId}`,
-        user: response.data.user,
+        user: {
+          id: userId,
+          username: "Unknown", // Fallback, ideally fetched from users object or another endpoint
+          email: "",
+        },
         unreadCount: 0,
       };
 
