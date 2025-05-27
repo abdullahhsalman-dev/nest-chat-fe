@@ -366,14 +366,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   fetchMessages: async (userId: string) => {
-    const { isAuthenticated } = useAuthStore.getState();
+    const { isAuthenticated, user } = useAuthStore.getState();
     if (!isAuthenticated) return;
+
+    const loggedUserId = user?.id || null;
 
     try {
       set({ loading: true, error: null });
 
       const response = await axios.get<{ messages: Message[]; user: User }>(
-        `${API_URL}/chat/conversations/${userId}`,
+        `${API_URL}/chat/conversations/${loggedUserId}`,
         {
           withCredentials: true,
         }
