@@ -1,160 +1,504 @@
 "use client";
 
-import { useState, FormEvent, ChangeEvent } from "react";
+import { useState, type FormEvent, type ChangeEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion } from "framer-motion";
+import {
+  FiEye,
+  FiEyeOff,
+  FiMail,
+  FiLock,
+  FiUser,
+  FiAlertCircle,
+  FiCheck,
+} from "react-icons/fi";
 import { useAuthStore } from "../stores/useAuthStore";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
+import { useToast } from "@/hooks/use-toast";
+
+interface FormData {
+  username: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+}
+
+interface FormErrors {
+  username?: string;
+  email?: string;
+  password?: string;
+  confirmPassword?: string;
+}
 
 export default function RegisterPage() {
   const router = useRouter();
   const { register, error, loading, clearError } = useAuthStore();
+  const { toast } = useToast();
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormData>({
     username: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
 
-  const [formError, setFormError] = useState("");
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // Username validation
+  const validateUsername = (username: string): string | undefined => {
+    if (!username) return "Username is required";
+    if (username.length < 3) return "Username must be at least 3 characters";
+    if (username.length > 20) return "Username must be less than 20 characters";
+    if (!/^[a-zA-Z0-9_]+$/.test(username))
+      return "Username can only contain letters, numbers, and underscores";
+    return undefined;
+  };
+
+  // Email validation
+  const validateEmail = (email: string): string | undefined => {
+    if (!email) return "Email is required";
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) return "Please enter a valid email address";
+    return undefined;
+  };
+
+  // Password validation
+  const validatePassword = (password: string): string | undefined => {
+    if (!password) return "Password is required";
+    if (password.length < 8) return "Password must be at least 8 characters";
+    if (!/(?=.*[a-z])/.test(password))
+      return "Password must contain at least one lowercase letter";
+    if (!/(?=.*[A-Z])/.test(password))
+      return "Password must contain at least one uppercase letter";
+    if (!/(?=.*\d)/.test(password))
+      return "Password must contain at least one number";
+    return undefined;
+  };
+
+  // Confirm password validation
+  const validateConfirmPassword = (
+    confirmPassword: string,
+    password: string
+  ): string | undefined => {
+    if (!confirmPassword) return "Please confirm your password";
+    if (confirmPassword !== password) return "Passwords do not match";
+    return undefined;
+  };
+
+  // Calculate password strength
+  const getPasswordStrength = (password: string): number => {
+    let strength = 0;
+    if (password.length >= 8) strength += 25;
+    if (/(?=.*[a-z])/.test(password)) strength += 25;
+    if (/(?=.*[A-Z])/.test(password)) strength += 25;
+    if (/(?=.*\d)/.test(password)) strength += 25;
+    return strength;
+  };
+
+  const passwordStrength = getPasswordStrength(formData.password);
+
+  // Validate form
+  const validateForm = (): boolean => {
+    const errors: FormErrors = {
+      username: validateUsername(formData.username),
+      email: validateEmail(formData.email),
+      password: validatePassword(formData.password),
+      confirmPassword: validateConfirmPassword(
+        formData.confirmPassword,
+        formData.password
+      ),
+    };
+
+    setFormErrors(errors);
+    return !Object.values(errors).some(Boolean);
+  };
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
 
+    // Clear errors when user starts typing
     if (error) clearError();
-    if (formError) setFormError("");
+    if (formErrors[name as keyof FormErrors]) {
+      setFormErrors((prev) => ({ ...prev, [name]: undefined }));
+    }
+
+    // Mark field as touched
+    setTouched((prev) => ({ ...prev, [name]: true }));
+  };
+
+  const handleBlur = (field: keyof FormData) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+
+    // Validate on blur
+    let fieldError: string | undefined;
+    if (field === "username") {
+      fieldError = validateUsername(formData.username);
+    } else if (field === "email") {
+      fieldError = validateEmail(formData.email);
+    } else if (field === "password") {
+      fieldError = validatePassword(formData.password);
+    } else if (field === "confirmPassword") {
+      fieldError = validateConfirmPassword(
+        formData.confirmPassword,
+        formData.password
+      );
+    }
+
+    if (fieldError) {
+      setFormErrors((prev) => ({ ...prev, [field]: fieldError }));
+    }
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    if (formData.password !== formData.confirmPassword) {
-      setFormError("Passwords do not match");
+    // Mark all fields as touched
+    setTouched({
+      username: true,
+      email: true,
+      password: true,
+      confirmPassword: true,
+    });
+
+    if (!validateForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please fix the errors below",
+        variant: "destructive",
+      });
       return;
     }
 
     try {
       await register(formData.username, formData.email, formData.password);
+      toast({
+        title: "Account created!",
+        description: "Please sign in with your new account",
+      });
       router.push("/login");
     } catch (error) {
       console.error("Registration failed", error);
     }
   };
 
+  const isFieldValid = (field: keyof FormData) => {
+    return touched[field] && formData[field] && !formErrors[field];
+  };
+
+  const isFieldInvalid = (field: keyof FormData) => {
+    return touched[field] && formErrors[field];
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-4">
-      <div className="w-full max-w-md bg-white/10 backdrop-blur-lg rounded-2xl shadow-xl p-8 space-y-6 border border-white/20">
-        <div className="text-center">
-          <h2 className="text-3xl font-bold text-red-700">Create Account</h2>
-          <p className="mt-2 text-sm text-gray-200">
-            Already have an account?{" "}
-            <Link
-              href="/login"
-              className="font-medium text-indigo-200 hover:text-indigo-100 transition-colors"
-            >
-              Sign in
-            </Link>
-          </p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-md"
+      >
+        <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
+              Create Account
+            </CardTitle>
+            <CardDescription className="text-gray-600">
+              Join us and start messaging with friends
+            </CardDescription>
+          </CardHeader>
 
-        {(error || formError) && (
-          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 flex items-center gap-2 text-sm text-red-200">
-            <svg
-              className="h-5 w-5 text-red-400"
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
-            </svg>
-            {error || formError}
-          </div>
-        )}
+          <CardContent className="space-y-6">
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Alert variant="destructive">
+                  <FiAlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              </motion.div>
+            )}
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="username" className="sr-only">
-              Username
-            </label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-              autoComplete="username"
-              required
-              className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
-              placeholder="Username"
-              value={formData.username}
-              onChange={handleChange}
-            />
-          </div>
-          <div>
-            <label htmlFor="email" className="sr-only">
-              Email address
-            </label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
-              placeholder="Email address"
-              value={formData.email}
-              onChange={handleChange}
-            />
-          </div>
-          <div>
-            <label htmlFor="password" className="sr-only">
-              Password
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
-              placeholder="Password"
-              value={formData.password}
-              onChange={handleChange}
-            />
-          </div>
-          <div>
-            <label htmlFor="confirmPassword" className="sr-only">
-              Confirm Password
-            </label>
-            <input
-              id="confirmPassword"
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              required
-              className="w-full px-4 py-3 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-400 transition-all"
-              placeholder="Confirm Password"
-              value={formData.confirmPassword}
-              onChange={handleChange}
-            />
-          </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Username Field */}
+              <div className="space-y-2">
+                <Label
+                  htmlFor="username"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Username
+                </Label>
+                <div className="relative">
+                  <FiUser className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    id="username"
+                    name="username"
+                    type="text"
+                    autoComplete="username"
+                    placeholder="Choose a username"
+                    value={formData.username}
+                    onChange={handleChange}
+                    onBlur={() => handleBlur("username")}
+                    className={`pl-10 pr-10 transition-all duration-200 ${
+                      isFieldValid("username")
+                        ? "border-green-500 focus:border-green-500 focus:ring-green-500"
+                        : isFieldInvalid("username")
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "focus:border-blue-500 focus:ring-blue-500"
+                    }`}
+                  />
+                  {isFieldValid("username") && (
+                    <FiCheck className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500 h-4 w-4" />
+                  )}
+                  {isFieldInvalid("username") && (
+                    <FiAlertCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 text-red-500 h-4 w-4" />
+                  )}
+                </div>
+                {formErrors.username && touched.username && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-sm text-red-600 flex items-center gap-1"
+                  >
+                    <FiAlertCircle className="h-3 w-3" />
+                    {formErrors.username}
+                  </motion.p>
+                )}
+              </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full py-3 px-4 rounded-lg text-white font-medium transition-all duration-200 ${
-              loading
-                ? "bg-indigo-400/50 cursor-not-allowed"
-                : "bg-indigo-600 hover:bg-indigo-700 hover:shadow-lg"
-            }`}
-          >
-            {loading ? "Creating account..." : "Create account"}
-          </button>
-        </form>
-      </div>
+              {/* Email Field */}
+              <div className="space-y-2">
+                <Label
+                  htmlFor="email"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Email Address
+                </Label>
+                <div className="relative">
+                  <FiMail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="Enter your email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    onBlur={() => handleBlur("email")}
+                    className={`pl-10 pr-10 transition-all duration-200 ${
+                      isFieldValid("email")
+                        ? "border-green-500 focus:border-green-500 focus:ring-green-500"
+                        : isFieldInvalid("email")
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "focus:border-blue-500 focus:ring-blue-500"
+                    }`}
+                  />
+                  {isFieldValid("email") && (
+                    <FiCheck className="absolute right-3 top-1/2 transform -translate-y-1/2 text-green-500 h-4 w-4" />
+                  )}
+                  {isFieldInvalid("email") && (
+                    <FiAlertCircle className="absolute right-3 top-1/2 transform -translate-y-1/2 text-red-500 h-4 w-4" />
+                  )}
+                </div>
+                {formErrors.email && touched.email && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-sm text-red-600 flex items-center gap-1"
+                  >
+                    <FiAlertCircle className="h-3 w-3" />
+                    {formErrors.email}
+                  </motion.p>
+                )}
+              </div>
+
+              {/* Password Field */}
+              <div className="space-y-2">
+                <Label
+                  htmlFor="password"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Password
+                </Label>
+                <div className="relative">
+                  <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    placeholder="Create a strong password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    onBlur={() => handleBlur("password")}
+                    className={`pl-10 pr-10 transition-all duration-200 ${
+                      isFieldValid("password")
+                        ? "border-green-500 focus:border-green-500 focus:ring-green-500"
+                        : isFieldInvalid("password")
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "focus:border-blue-500 focus:ring-blue-500"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {showPassword ? (
+                      <FiEyeOff className="h-4 w-4" />
+                    ) : (
+                      <FiEye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Password Strength Indicator */}
+                {formData.password && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-gray-600">Password strength</span>
+                      <span
+                        className={`font-medium ${
+                          passwordStrength < 50
+                            ? "text-red-600"
+                            : passwordStrength < 75
+                            ? "text-yellow-600"
+                            : "text-green-600"
+                        }`}
+                      >
+                        {passwordStrength < 50
+                          ? "Weak"
+                          : passwordStrength < 75
+                          ? "Good"
+                          : "Strong"}
+                      </span>
+                    </div>
+                    <Progress
+                      value={passwordStrength}
+                      className={`h-2 ${
+                        passwordStrength < 50
+                          ? "[&>div]:bg-red-500"
+                          : passwordStrength < 75
+                          ? "[&>div]:bg-yellow-500"
+                          : "[&>div]:bg-green-500"
+                      }`}
+                    />
+                  </div>
+                )}
+
+                {formErrors.password && touched.password && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-sm text-red-600 flex items-center gap-1"
+                  >
+                    <FiAlertCircle className="h-3 w-3" />
+                    {formErrors.password}
+                  </motion.p>
+                )}
+              </div>
+
+              {/* Confirm Password Field */}
+              <div className="space-y-2">
+                <Label
+                  htmlFor="confirmPassword"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Confirm Password
+                </Label>
+                <div className="relative">
+                  <FiLock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    autoComplete="new-password"
+                    placeholder="Confirm your password"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    onBlur={() => handleBlur("confirmPassword")}
+                    className={`pl-10 pr-10 transition-all duration-200 ${
+                      isFieldValid("confirmPassword")
+                        ? "border-green-500 focus:border-green-500 focus:ring-green-500"
+                        : isFieldInvalid("confirmPassword")
+                        ? "border-red-500 focus:border-red-500 focus:ring-red-500"
+                        : "focus:border-blue-500 focus:ring-blue-500"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {showConfirmPassword ? (
+                      <FiEyeOff className="h-4 w-4" />
+                    ) : (
+                      <FiEye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+                {formErrors.confirmPassword && touched.confirmPassword && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-sm text-red-600 flex items-center gap-1"
+                  >
+                    <FiAlertCircle className="h-3 w-3" />
+                    {formErrors.confirmPassword}
+                  </motion.p>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-medium py-2.5 transition-all duration-200 transform hover:scale-[1.02] disabled:scale-100"
+              >
+                {loading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Creating account...
+                  </div>
+                ) : (
+                  "Create Account"
+                )}
+              </Button>
+            </form>
+
+            {/* Login Link */}
+            <div className="text-center">
+              <p className="text-sm text-gray-600">
+                Already have an account?{" "}
+                <Link
+                  href="/login"
+                  className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
+                >
+                  Sign in here
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
     </div>
   );
 }
