@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import axios, { AxiosError } from "axios";
-import { io, Socket } from "socket.io-client";
+import axios, { type AxiosError } from "axios";
+import { io, type Socket } from "socket.io-client";
 import { useAuthStore } from "./useAuthStore";
 
 // API base URL
@@ -10,7 +10,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 axios.defaults.withCredentials = true;
 
 // Error Interfaces
-interface ApiErrorResponse {
+export interface ApiErrorResponse {
   message: string;
   error?: string;
   statusCode?: number;
@@ -548,4 +548,4 @@ export const cleanupChat = () => {
   });
 };
 
-export type { ChatError, ApiErrorResponse, SocketError };
+export type { ChatError, SocketError };

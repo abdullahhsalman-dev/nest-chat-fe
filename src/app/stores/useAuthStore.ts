@@ -1,6 +1,6 @@
-import axios, { AxiosError } from "axios";
+import axios, { type AxiosError } from "axios";
 import { create } from "zustand";
-import { ApiErrorResponse } from "./useChatStore";
+import type { ApiErrorResponse } from "./useChatStore";
 
 interface User {
   id: string;
@@ -233,6 +233,3 @@ export const setupAxiosInterceptors = () => {
     }
   );
 };
-
-// Call this in your app initialization (e.g., in _app.tsx or main.tsx)
-// setupAxiosInterceptors();

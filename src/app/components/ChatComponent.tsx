@@ -1,11 +1,48 @@
 "use client";
 
-import { useEffect, useRef, useState, KeyboardEvent, FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type FormEvent,
+} from "react";
 import { format, isToday, isYesterday, parseISO, isValid } from "date-fns";
 import { useAuthStore } from "../stores/useAuthStore";
-import { useChatStore, Message } from "../stores/useChatStore";
+import { useChatStore, type Message } from "../stores/useChatStore";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiSend, FiLogOut, FiUser, FiMenu, FiX } from "react-icons/fi";
+import {
+  FiSend,
+  FiLogOut,
+  FiUser,
+  FiMenu,
+  FiX,
+  FiSearch,
+  FiMoreVertical,
+  FiPhone,
+  FiVideo,
+  FiPaperclip,
+  FiSmile,
+  FiCheck,
+  FiCheckCircle,
+  FiSettings,
+  FiEdit3,
+  FiAlertCircle,
+} from "react-icons/fi";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
 
 export default function ChatComponent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -15,25 +52,35 @@ export default function ChatComponent() {
     currentConversation,
     messages,
     loading,
+    error,
     fetchConversations,
     fetchMessages,
     sendMessage,
     isUserOnline,
     connectSocket,
+    disconnectSocket,
     typingUsers,
+    emitTyping,
+    clearError,
   } = useChatStore();
 
   const [messageInput, setMessageInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(
+    null
+  );
+
+  const { toast } = useToast();
 
   useEffect(() => {
     connectSocket();
     fetchConversations();
     return () => {
-      useChatStore.getState().disconnectSocket();
+      disconnectSocket();
     };
-  }, [connectSocket, fetchConversations]);
+  }, [connectSocket, fetchConversations, disconnectSocket]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -41,24 +88,62 @@ export default function ChatComponent() {
 
   useEffect(() => {
     if (isTyping && currentConversation) {
-      useChatStore.getState().emitTyping(currentConversation.user.id);
-    }
-  }, [isTyping, currentConversation]);
+      emitTyping(currentConversation.user.id);
 
-  const handleSelectConversation = (userId: string) => {
-    fetchMessages(userId);
-    setIsSidebarOpen(false); // Close sidebar on mobile after selection
+      // Clear existing timeout
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+      }
+
+      // Set new timeout to stop typing
+      const timeout = setTimeout(() => {
+        setIsTyping(false);
+      }, 3000);
+
+      setTypingTimeout(timeout);
+    }
+
+    return () => {
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+      }
+    };
+  }, [isTyping, currentConversation, emitTyping, typingTimeout]);
+
+  const handleSelectConversation = async (userId: string) => {
+    try {
+      await fetchMessages(userId);
+      setIsSidebarOpen(false); // Close sidebar on mobile after selection
+    } catch (error) {
+      console.error("Failed to fetch messages:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load conversation",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim() || !currentConversation) return;
+
     try {
       await sendMessage(currentConversation.user.id, messageInput);
       setMessageInput("");
       setIsTyping(false);
+
+      toast({
+        title: "Message sent",
+        description: `Message sent to ${currentConversation.user.username}`,
+      });
     } catch (error) {
       console.error("Failed to send message", error);
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive",
+      });
     }
   };
 
@@ -67,7 +152,10 @@ export default function ChatComponent() {
       e.preventDefault();
       handleSendMessage(e);
     }
-    setIsTyping(true);
+
+    if (!isTyping) {
+      setIsTyping(true);
+    }
   };
 
   const formatMessageDate = (dateInput: string | Date | null | undefined) => {
@@ -79,6 +167,13 @@ export default function ChatComponent() {
     if (isYesterday(date)) return `Yesterday ${format(date, "h:mm a")}`;
     return format(date, "MMM d, yyyy h:mm a");
   };
+
+  // const formatLastSeen = (date?: Date) => {
+  //   if (!date) return "Last seen a while ago";
+  //   if (isToday(date)) return `Last seen ${format(date, "h:mm a")}`;
+  //   if (isYesterday(date)) return "Last seen yesterday";
+  //   return `Last seen ${format(date, "MMM d")}`;
+  // };
 
   const groupMessagesByDate = (messages: Message[]) => {
     return messages.reduce((groups: Record<string, Message[]>, message) => {
@@ -104,217 +199,383 @@ export default function ChatComponent() {
     }, {});
   };
 
+  const filteredConversations = conversations.filter((conv) =>
+    conv.user.username.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 to-gray-100 text-gray-900 font-sans max-w-7xl mx-auto">
-      {/* Sidebar Toggle Button for Mobile */}
-      <button
-        className="md:hidden fixed top-4 left-4 z-20 p-2 bg-blue-600 text-white rounded-full shadow-lg"
+    <div className="flex h-screen bg-background">
+      {/* Mobile Sidebar Toggle */}
+      <Button
+        variant="outline"
+        size="icon"
+        className="md:hidden fixed top-4 left-4 z-50"
         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-        aria-label="Toggle sidebar"
       >
-        {isSidebarOpen ? <FiX size={20} /> : <FiMenu size={20} />}
-      </button>
+        {isSidebarOpen ? <FiX /> : <FiMenu />}
+      </Button>
 
       {/* Sidebar */}
       <aside
-        className={`bg-white shadow-xl flex flex-col transition-all duration-300 w-80 md:w-80 fixed md:static h-full z-10 ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } md:translate-x-0`}
+        className={`
+        bg-card border-r flex flex-col w-80 
+        fixed md:static h-full z-40 transition-transform duration-300
+        ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }
+      `}
       >
-        <div className="p-4 flex justify-between items-center border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
-          <h2 className="text-xl font-bold">{user?.username || "Chat"}</h2>
-          <button
-            onClick={logout}
-            className="text-sm px-3 py-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors flex items-center gap-2"
-            aria-label="Logout"
-          >
-            <FiLogOut />
-            Logout
-          </button>
+        {/* Header */}
+        <div className="p-4 border-b">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-xl font-semibold">Messages</h1>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="icon">
+                <FiEdit3 className="h-4 w-4" />
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <FiMoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem>
+                    <FiSettings className="mr-2 h-4 w-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={logout}>
+                    <FiLogOut className="mr-2 h-4 w-4" />
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+
+          {/* User Info */}
+          <div className="flex items-center gap-3 mb-4 p-2 bg-muted rounded-lg">
+            <Avatar>
+              <AvatarFallback>
+                {user?.username?.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{user?.username}</p>
+              <p className="text-sm text-muted-foreground truncate">
+                {user?.email}
+              </p>
+            </div>
+          </div>
+
+          {/* Search */}
+          <div className="relative">
+            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search conversations..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
         </div>
 
-        <div className="overflow-y-auto flex-1">
-          {loading && (
-            <div className="flex justify-center items-center mt-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-            </div>
-          )}
-          {!loading && conversations.length === 0 && (
-            <p className="text-center text-gray-500 mt-4">No conversations</p>
-          )}
-          <AnimatePresence>
-            {!loading &&
-              conversations.map((convo) => (
+        {/* Error Display */}
+        {error && (
+          <div className="p-4">
+            <Alert variant="destructive">
+              <FiAlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                {error.message}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearError}
+                  className="ml-2 h-auto p-0 text-xs"
+                >
+                  Dismiss
+                </Button>
+              </AlertDescription>
+            </Alert>
+          </div>
+        )}
+
+        {/* Conversations List */}
+        <ScrollArea className="flex-1">
+          <div className="p-2">
+            {loading && conversations.length === 0 && (
+              <div className="flex justify-center items-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            )}
+
+            {!loading && filteredConversations.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                {searchQuery
+                  ? "No conversations found"
+                  : "No conversations yet"}
+              </div>
+            )}
+
+            <AnimatePresence>
+              {filteredConversations.map((conversation) => (
                 <motion.div
-                  key={convo.user.id}
+                  key={conversation.user.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                  onClick={() => handleSelectConversation(convo.user.id)}
-                  className={`cursor-pointer p-4 hover:bg-gray-100 flex items-center gap-3 transition-colors border-b border-gray-100 ${
-                    currentConversation?.user.id === convo.user.id
-                      ? "bg-blue-50"
-                      : ""
-                  }`}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter")
-                      handleSelectConversation(convo.user.id);
-                  }}
+                  className={`
+                    p-3 rounded-lg cursor-pointer transition-colors mb-1
+                    hover:bg-accent
+                    ${
+                      currentConversation?.user.id === conversation.user.id
+                        ? "bg-accent"
+                        : ""
+                    }
+                  `}
+                  onClick={() => handleSelectConversation(conversation.user.id)}
                 >
-                  <div className="relative">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center font-bold shadow-md">
-                      {convo.user.username.charAt(0).toUpperCase()}
-                    </div>
-                    {isUserOnline(convo.user.id) && (
-                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></span>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <h4 className="font-semibold truncate text-gray-800">
-                        {convo.user.username}
-                      </h4>
-                      {convo.lastMessage && (
-                        <span className="text-xs text-gray-500">
-                          {formatMessageDate(convo.lastMessage.createdAt)}
-                        </span>
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <Avatar>
+                        <AvatarFallback>
+                          {conversation.user.username.charAt(0).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      {isUserOnline(conversation.user.id) && (
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
                       )}
                     </div>
-                    <div className="text-sm text-gray-600 truncate">
-                      {convo.lastMessage?.content || "No messages yet"}
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-medium truncate">
+                          {conversation.user.username}
+                        </h3>
+                        {conversation.lastMessage && (
+                          <span className="text-xs text-muted-foreground">
+                            {formatMessageDate(
+                              conversation.lastMessage.createdAt
+                            )}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-muted-foreground truncate">
+                          {conversation.lastMessage?.content ||
+                            "No messages yet"}
+                        </p>
+                        {conversation.unreadCount > 0 && (
+                          <Badge variant="default" className="ml-2">
+                            {conversation.unreadCount}
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  {convo.unreadCount > 0 && (
-                    <div className="bg-blue-500 text-white text-xs rounded-full px-2 py-1">
-                      {convo.unreadCount}
-                    </div>
-                  )}
                 </motion.div>
               ))}
-          </AnimatePresence>
-        </div>
+            </AnimatePresence>
+          </div>
+        </ScrollArea>
       </aside>
 
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col">
         {currentConversation ? (
           <>
-            <div className="p-4 border-b bg-white shadow-sm flex items-center gap-3">
-              <div className="relative">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 text-white rounded-full flex items-center justify-center font-bold shadow-md">
-                  {currentConversation.user.username.charAt(0).toUpperCase()}
+            {/* Chat Header */}
+            <div className="p-4 border-b bg-card">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Avatar>
+                      <AvatarFallback>
+                        {currentConversation.user.username
+                          .charAt(0)
+                          .toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    {isUserOnline(currentConversation.user.id) && (
+                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-background" />
+                    )}
+                  </div>
+
+                  <div>
+                    <h2 className="font-semibold">
+                      {currentConversation.user.username}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {isUserOnline(currentConversation.user.id)
+                        ? "Online"
+                        : "Offline"}
+                    </p>
+                  </div>
                 </div>
-                {isUserOnline(currentConversation.user.id) && (
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 rounded-full border-2 border-white"></span>
-                )}
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800">
-                  {currentConversation.user.username}
-                </h3>
-                <p className="text-xs text-gray-500">
-                  {isUserOnline(currentConversation.user.id)
-                    ? "Online"
-                    : "Offline"}
-                </p>
+
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="icon">
+                    <FiPhone className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon">
+                    <FiVideo className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon">
+                    <FiMoreVertical className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-              {messages.length === 0 ? (
-                <div className="text-center text-gray-500">
-                  No messages. Start chatting!
+            {/* Messages Area */}
+            <ScrollArea className="flex-1 p-4">
+              {loading && messages.length === 0 ? (
+                <div className="flex justify-center items-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+                </div>
+              ) : messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <FiUser className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium mb-2">No messages yet</h3>
+                  <p className="text-muted-foreground">
+                    Start a conversation with{" "}
+                    {currentConversation.user.username}
+                  </p>
                 </div>
               ) : (
-                <AnimatePresence>
+                <div className="space-y-4">
                   {Object.entries(groupMessagesByDate(messages)).map(
-                    ([date, grouped]) => (
-                      <div key={date} className="mb-6">
-                        <div className="text-center text-xs text-gray-500 bg-gray-200 rounded-full px-3 py-1 mx-auto w-fit shadow-sm">
-                          {date === "N/A"
-                            ? "Unknown Date"
-                            : format(parseISO(date), "MMMM d, yyyy")}
+                    ([date, groupedMessages]) => (
+                      <div key={date}>
+                        <div className="flex justify-center mb-4">
+                          <span className="bg-muted px-3 py-1 rounded-full text-xs text-muted-foreground">
+                            {date === "N/A"
+                              ? "Unknown Date"
+                              : format(parseISO(date), "MMMM d, yyyy")}
+                          </span>
                         </div>
-                        {grouped.map((msg) => {
-                          const isOwn = msg.senderId === user?.id;
-                          return (
-                            <motion.div
-                              key={msg.id}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className={`mb-4 flex ${
-                                isOwn ? "justify-end" : "justify-start"
-                              }`}
-                            >
-                              <div
-                                className={`max-w-xs sm:max-w-md px-4 py-2 rounded-2xl shadow-md ${
-                                  isOwn
-                                    ? "bg-gradient-to-br from-blue-600 to-indigo-600 text-white"
-                                    : "bg-white border border-gray-200 text-gray-900"
+
+                        <AnimatePresence>
+                          {groupedMessages.map((message) => {
+                            const isOwn = message.senderId === user?.id;
+                            return (
+                              <motion.div
+                                key={message.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className={`flex mb-4 ${
+                                  isOwn ? "justify-end" : "justify-start"
                                 }`}
                               >
-                                <div className="text-sm">{msg.content}</div>
-                                <div className="text-xs mt-1 text-right opacity-75">
-                                  {formatMessageDate(msg.createdAt)}
+                                <div
+                                  className={`
+                                max-w-[70%] px-4 py-2 rounded-2xl
+                                ${
+                                  isOwn
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted"
+                                }
+                              `}
+                                >
+                                  <p className="text-sm">{message.content}</p>
+                                  <div
+                                    className={`
+                                  flex items-center gap-1 mt-1 text-xs
+                                  ${
+                                    isOwn
+                                      ? "text-primary-foreground/70"
+                                      : "text-muted-foreground"
+                                  }
+                                `}
+                                  >
+                                    <span>
+                                      {formatMessageDate(message.createdAt)}
+                                    </span>
+                                    {isOwn &&
+                                      (message.read ? (
+                                        <FiCheckCircle className="h-3 w-3" />
+                                      ) : (
+                                        <FiCheck className="h-3 w-3" />
+                                      ))}
+                                  </div>
                                 </div>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
                       </div>
                     )
                   )}
-                </AnimatePresence>
-              )}
-              {typingUsers.includes(currentConversation.user.id) && (
-                <div className="flex justify-start mb-4">
-                  <div className="bg-gray-200 rounded-2xl px-4 py-2 text-sm text-gray-600 shadow-sm">
-                    <span className="animate-pulse">Typing...</span>
-                  </div>
+
+                  {typingUsers.includes(currentConversation.user.id) && (
+                    <div className="flex justify-start">
+                      <div className="bg-muted px-4 py-2 rounded-2xl">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" />
+                          <div
+                            className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
+                            style={{ animationDelay: "0.1s" }}
+                          />
+                          <div
+                            className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
+                            style={{ animationDelay: "0.2s" }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div ref={messagesEndRef} />
                 </div>
               )}
-              <div ref={messagesEndRef} />
-            </div>
+            </ScrollArea>
 
-            <form
-              onSubmit={handleSendMessage}
-              className="p-4 bg-white border-t flex gap-3 items-center shadow-sm"
-            >
-              <textarea
-                rows={1}
-                className="flex-1 border border-gray-200 rounded-lg px-4 py-2 resize-none focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-gray-50 text-gray-900"
-                placeholder="Type a message..."
-                value={messageInput}
-                onChange={(e) => setMessageInput(e.target.value)}
-                onKeyDown={handleKeyPress}
-                aria-label="Message input"
-              />
-              <button
-                type="submit"
-                disabled={!messageInput.trim()}
-                className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
-                  messageInput.trim()
-                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700"
-                    : "bg-gray-200 text-gray-500 cursor-not-allowed"
-                }`}
-                aria-label="Send message"
-              >
-                <FiSend />
-                Send
-              </button>
-            </form>
+            {/* Message Input */}
+            <div className="p-4 border-t bg-card">
+              <form onSubmit={handleSendMessage} className="flex gap-2">
+                <Button type="button" variant="ghost" size="icon">
+                  <FiPaperclip className="h-4 w-4" />
+                </Button>
+
+                <div className="flex-1 relative">
+                  <Textarea
+                    placeholder="Type a message..."
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyDown={handleKeyPress}
+                    className="min-h-[40px] max-h-32 resize-none pr-12"
+                    rows={1}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                  >
+                    <FiSmile className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <Button
+                  type="submit"
+                  disabled={!messageInput.trim()}
+                  size="icon"
+                >
+                  <FiSend className="h-4 w-4" />
+                </Button>
+              </form>
+            </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500 text-center">
-            <div>
-              <FiUser className="mx-auto text-4xl mb-2" />
-              <p className="text-lg font-medium">No conversation selected</p>
-              <p className="text-sm">
-                Choose a user from the sidebar to begin chatting.
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <FiUser className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+              <h2 className="text-xl font-semibold mb-2">
+                Select a conversation
+              </h2>
+              <p className="text-muted-foreground">
+                Choose a conversation from the sidebar to start messaging
               </p>
             </div>
           </div>
