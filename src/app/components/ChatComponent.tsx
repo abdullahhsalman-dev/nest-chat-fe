@@ -9,7 +9,7 @@ import {
 } from "react";
 import { format, isToday, isYesterday, parseISO, isValid } from "date-fns";
 import { useAuthStore } from "../stores/useAuthStore";
-import { useChatStore, User, type Message } from "../stores/useChatStore";
+import { useChatStore, type User, type Message } from "../stores/useChatStore";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FiSend,
@@ -128,12 +128,22 @@ export default function ChatComponent() {
       setTypingTimeout(timeout);
     }
 
+    // Cleanup function
     return () => {
       if (typingTimeout) {
         clearTimeout(typingTimeout);
       }
     };
-  }, [isTyping, currentConversation, emitTyping, typingTimeout]);
+  }, [isTyping, currentConversation, emitTyping]); // Remove typingTimeout from dependencies
+
+  // Add this new useEffect after the existing ones
+  useEffect(() => {
+    return () => {
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+      }
+    };
+  }, []);
 
   // Fetch all users function
   const fetchAllUsers = async () => {
@@ -219,6 +229,7 @@ export default function ChatComponent() {
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (!messageInput.trim() || !currentConversation) return;
+    console.log("===================", currentConversation);
 
     try {
       await sendMessage(currentConversation.user.id, messageInput);
