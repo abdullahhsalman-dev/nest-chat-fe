@@ -149,7 +149,7 @@ export default function ChatComponent() {
   const fetchAllUsers = async () => {
     try {
       setLoadingUsers(true);
-      const response = await axios.post(`${API_URL}/auth/users`, {
+      const response = await axios.get(`${API_URL}/auth/users`, {
         withCredentials: true,
       });
 
