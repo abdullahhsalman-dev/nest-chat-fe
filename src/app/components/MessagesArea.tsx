@@ -80,7 +80,7 @@ export default function MessagesArea() {
                     const isOwn = message.senderId === user?.id;
                     return (
                       <motion.div
-                        key={message.id}
+                        key={message._id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         className={`flex mb-4 ${

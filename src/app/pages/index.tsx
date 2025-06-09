@@ -209,7 +209,7 @@ export default function ChatPage() {
 
                         return (
                           <div
-                            key={message.id}
+                            key={message._id}
                             className={`mb-4 flex ${
                               isOwn ? "justify-end" : "justify-start"
                             }`}
