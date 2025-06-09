@@ -379,7 +379,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Fetch messages for the specific user conversation
       const response = await axios.get<{ messages: Message[] }>(
-        `${API_URL}/chat/conversations/${user.id}`,
+        `${API_URL}/chat/conversations/${userId}`,
         {
           withCredentials: true,
         }
