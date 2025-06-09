@@ -26,7 +26,7 @@ export default function MessagesArea() {
 
   const groupMessagesByDate = (messages: Message[]) => {
     return messages.reduce((groups: Record<string, Message[]>, message) => {
-      const dateInput = message.createdAt;
+      const dateInput = message.timestamp;
       if (!dateInput) {
         groups["N/A"] = groups["N/A"] || [];
         groups["N/A"].push(message);
@@ -108,7 +108,7 @@ export default function MessagesArea() {
                             }
                           `}
                           >
-                            <span>{formatMessageDate(message.createdAt)}</span>
+                            <span>{formatMessageDate(message.timestamp)}</span>
                             {isOwn &&
                               (message.read ? (
                                 <FiCheckCircle className="h-3 w-3" />

@@ -230,7 +230,7 @@ export default function Sidebar({
                       {conversation.lastMessage && (
                         <span className="text-xs text-muted-foreground">
                           {formatMessageDate(
-                            conversation.lastMessage.createdAt
+                            conversation.lastMessage.timestamp // Changed from createdAt to timestamp
                           )}
                         </span>
                       )}

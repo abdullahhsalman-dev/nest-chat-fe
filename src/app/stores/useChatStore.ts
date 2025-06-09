@@ -65,7 +65,7 @@ export interface Message {
   receiverId: string;
   content: string;
   read: boolean;
-  createdAt: string;
+  timestamp: string;
 }
 
 export interface Conversation {
@@ -343,7 +343,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 receiverId: conv.lastMessage.receiverId,
                 content: conv.lastMessage.content,
                 read: conv.lastMessage.read,
-                createdAt: conv.lastMessage.timestamp,
+                timestamp: conv.lastMessage.timestamp,
               }
             : undefined,
           unreadCount: conv.unreadCount || 0,
