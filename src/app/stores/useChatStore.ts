@@ -60,12 +60,12 @@ export interface User {
 }
 
 export interface Message {
-  id: string;
+  _id: string;
   senderId: string;
   receiverId: string;
   content: string;
   read: boolean;
-  createdAt: string;
+  timestamp: string;
 }
 
 export interface Conversation {
@@ -206,7 +206,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
           if (message.senderId === currentConversation.user.id) {
             get()
-              .markMessageAsRead(message.id)
+              .markMessageAsRead(message._id)
               .catch((error) => {
                 console.error("Failed to mark message as read:", error);
               });
@@ -338,12 +338,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
           },
           lastMessage: conv.lastMessage
             ? {
-                id: conv.lastMessage._id,
+                _id: conv.lastMessage._id,
                 senderId: conv.lastMessage.senderId,
                 receiverId: conv.lastMessage.receiverId,
                 content: conv.lastMessage.content,
                 read: conv.lastMessage.read,
-                createdAt: conv.lastMessage.timestamp,
+                timestamp: conv.lastMessage.timestamp,
               }
             : undefined,
           unreadCount: conv.unreadCount || 0,
@@ -379,7 +379,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // Fetch messages for the specific user conversation
       const response = await axios.get<{ messages: Message[] }>(
-        `${API_URL}/chat/conversations/${user.id}`,
+        `${API_URL}/chat/conversations/${userId}`,
         {
           withCredentials: true,
         }
@@ -417,10 +417,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         for (const message of unreadMessages) {
           try {
-            await get().markMessageAsRead(message.id);
+            await get().markMessageAsRead(message._id);
           } catch (error) {
             console.error(
-              `Failed to mark message ${message.id} as read:`,
+              `Failed to mark message ${message._id} as read:`,
               error
             );
           }
@@ -510,7 +510,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       set((state) => ({
         messages: state.messages.map((m) =>
-          m.id === messageId ? { ...m, read: true } : m
+          m._id === messageId ? { ...m, read: true } : m
         ),
       }));
     } catch (error) {

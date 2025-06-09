@@ -62,7 +62,7 @@ export default function ChatPage() {
   // Group messages by date for better UI organization
   const groupMessagesByDate = (messages: Message[]) => {
     return messages.reduce((groups: Record<string, Message[]>, message) => {
-      const date = format(new Date(message.createdAt), "yyyy-MM-dd");
+      const date = format(new Date(message.timestamp), "yyyy-MM-dd");
       if (!groups[date]) {
         groups[date] = [];
       }
@@ -126,7 +126,7 @@ export default function ChatPage() {
                     {conversation.lastMessage && (
                       <span className="text-xs text-gray-500">
                         {format(
-                          new Date(conversation.lastMessage.createdAt),
+                          new Date(conversation.lastMessage.timestamp),
                           "h:mm a"
                         )}
                       </span>
@@ -209,7 +209,7 @@ export default function ChatPage() {
 
                         return (
                           <div
-                            key={message.id}
+                            key={message._id}
                             className={`mb-4 flex ${
                               isOwn ? "justify-end" : "justify-start"
                             }`}
@@ -229,7 +229,7 @@ export default function ChatPage() {
                                     : "text-gray-500"
                                 }`}
                               >
-                                {formatMessageDate(message.createdAt)}
+                                {formatMessageDate(message.timestamp)}
                                 {isOwn && (
                                   <span className="ml-1">
                                     {message.read ? (
